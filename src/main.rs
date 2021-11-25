@@ -1,10 +1,30 @@
 use std::io;
 use std::fs::File;                                                                                                                                                                   
-use std::fs;                                                                                                                                                                  
+use std::fs;    
+use structopt::StructOpt;
+
+#[derive(StructOpt)]
+struct Cli {
+    action: String,
+    item: String,
+}
 
 
 fn main() {
+    
+    let args = Cli::from_args();
+    
+    println!("first arg is {}", args.action);
     let mut todo_list = vec![];
+
+    match args.action.as_str() {
+        "add" => {
+            let mut new_item = args.item.trim().to_string();
+            todo_list.push(new_item);
+        },
+        _ => println!("invalid action")
+
+    }
 
     menu(&mut todo_list);
 
