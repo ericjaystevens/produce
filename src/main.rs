@@ -3,10 +3,22 @@ use structopt::StructOpt;
 use std::io::prelude::*;
 use serde::{Serialize, Deserialize};
 
-#[derive(StructOpt)]
-struct Cli {
-    action: String,
-    item: String,
+#[derive(StructOpt, Debug)]
+#[structopt(name="Produce", about="A productivity tool")]
+enum Cli {
+    #[structopt(name = "add", about="Add an item to the todo list")]
+    Add {
+        /// item to add to list
+        item: String,
+    },
+    #[structopt(name = "remove", about="Remove an existing item from the todo list")]
+    Remove {
+        /// item to remove from list
+        item: String,
+    },
+    #[structopt(name = "list", about="List all existing items from the todo list")]
+    List {
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -15,15 +27,15 @@ struct TodoItem {
 }
 
 fn main() {
-    let args = Cli::from_args();
+    //let args = Cli::from_args();
     
     let data_path = "todos.json";
     let mut todo_list:Vec<TodoItem> = load(data_path);
 
-    match args.action.as_str() {
-        "add" => new_item(args.item.trim().to_string(), &mut todo_list, data_path),
-        "list" => list(&mut todo_list),
-        "delete" => delete(args.item.trim().to_string(), data_path),
+    match Cli::from_args() {
+        Cli::Add {item}=> new_item(item, &mut todo_list, data_path),
+        Cli::List {} => list(&mut todo_list),
+        Cli::Remove {item} => delete(item, data_path),
         _ => println!("invalid action")
     }
 }
