@@ -34,7 +34,7 @@ fn main() {
 
     match Cli::from_args() {
         Cli::Add {item}=> new_item(item, &mut todo_list, data_path),
-        Cli::List {} => list(&mut todo_list),
+        Cli::List {} => list(&mut todo_list, &mut std::io::stdout()),
         Cli::Remove {item} => delete(item, data_path),
         _ => println!("invalid action")
     }
@@ -65,9 +65,10 @@ fn load(path: &str) -> Vec<TodoItem> {
     deserialized
 }
 
-fn list(todo_list: &mut Vec<TodoItem>) {
+fn list(todo_list: &mut Vec<TodoItem>, mut writer: impl std::io::Write) {
     for todo_item in todo_list.iter().clone() {
-        println!("{}",todo_item.name);
+        //println!("{}",todo_item.name);
+        writeln!(writer, "{}", todo_item.name);
     }
 }
 
@@ -77,3 +78,16 @@ fn delete(item_name: String, path: &str)  {
     save(&mut todo_list, path);
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn list_test() {
+        let mut todo_list : Vec<TodoItem> = Vec::new(); 
+        todo_list.push(TodoItem{name:"pizza".to_string()});
+        todo_list.push(TodoItem{name:"things".to_string()});
+        let mut result = Vec::new();
+        list(&mut todo_list, &mut result);
+        assert_eq!(result, b"pizza\nthings\n");
+    }
+}
