@@ -53,7 +53,7 @@ fn new_item(new_item_name: String, todo_list: &mut Vec<TodoItem>, path: &Path){
     save(todo_list, path);
 }
 
-//probaby should return an option or something to show the save was successful
+//probably should return an option or something to show the save was successful
 fn save(todo_list: &mut Vec<TodoItem>, path: &Path){
     let mut file = File::create(path).unwrap();
     //convert to json
@@ -94,6 +94,21 @@ mod tests {
         let mut result = Vec::new();
         list(&mut todo_list, &mut result);
         assert_eq!(result, b"pizza\nthings\n");
+    }
+    #[test]
+    fn new_item_test() {
+        let mut todo_list : Vec<TodoItem> = Vec::new(); 
+        todo_list.push(TodoItem{name:"pizza".to_string()});
+        todo_list.push(TodoItem{name:"things".to_string()});
+        let new_item_name = String::from("athing");
+
+        let path = Path::new("./todos.json");
+
+        new_item(new_item_name, &mut todo_list, path);
+        load(path);
+        let mut result = Vec::new();
+        list(&mut todo_list, &mut result);
+        assert_eq!(result, b"pizza\nthings\nathing\n");
     }
 
     #[test]
