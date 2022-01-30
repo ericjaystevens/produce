@@ -1,126 +1,28 @@
-use std::fs::File;                                                                                                                                                                   
-use structopt::StructOpt;
-use std::io::prelude::*;
-use serde::{Serialize, Deserialize};
-use tempdir::TempDir;
-use std::path::Path;
+use tide::{Response, Request, Body};
+use tide::prelude::{Deserialize, Serialize};
+// use serde::{Deserialize, Serialize};
 
-
-
-#[derive(StructOpt, Debug)]
-#[structopt(name="Produce", about="A productivity tool")]
-enum Cli {
-    #[structopt(name = "add", about="Add an item to the todo list")]
-    Add {
-        /// item to add to list
-        item: String,
-    },
-    #[structopt(name = "remove", about="Remove an existing item from the todo list")]
-    Remove {
-        /// item to remove from list
-        item: String,
-    },
-    #[structopt(name = "list", about="List all existing items from the todo list")]
-    List {
-    }
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-struct TodoItem {
+#[derive(Clone, Debug, Deserialize, Serialize)]
+struct Jargon {
     name: String,
+    def: String,
 }
 
-fn main() {
-    //let args = Cli::from_args();
-    
-    let data_path = Path::new("./todos.json");
+#[async_std::main]
+async fn main() -> Result<(), std::io::Error> {
+    tide::log::start();
+    let mut app = tide::new();
 
-    let mut todo_list:Vec<TodoItem> = load(data_path);
+    app.at("/").get(|_| async { Ok("Hello, world!") });
 
-    match Cli::from_args() {
-        Cli::Add {item}=> new_item(item, &mut todo_list, data_path),
-        Cli::List {} => list(&mut todo_list, &mut std::io::stdout()),
-        Cli::Remove {item} => delete(item, data_path),
-        _ => println!("invalid action")
-    }
-}
+    app.at("/jargon").post(|mut req: Request<()>| async move {
+        let jargon: Jargon = req.body_json().await?;
+        println!("{:?}", jargon);
+        let mut res = Response::new(201);
+        res.set_body(Body::from_json(&jargon)?);
+        Ok(res)
+    });
 
-fn new_item(new_item_name: String, todo_list: &mut Vec<TodoItem>, path: &Path){
-    let new_item = TodoItem{
-        name: new_item_name,
-    };
-    todo_list.push(new_item);
-    save(todo_list, path);
-}
-
-//probably should return an option or something to show the save was successful
-fn save(todo_list: &mut Vec<TodoItem>, path: &Path){
-    let mut file = File::create(path).unwrap();
-    //convert to json
-    let serialized = serde_json::to_string(&todo_list).unwrap();
-    //write json to file
-    file.write_all(serialized.as_bytes()).unwrap();
-}
-
-fn load(path: &Path) -> Vec<TodoItem> {
-    let mut file = File::open(path).unwrap();
-    let mut content = String::new();
-    file.read_to_string(&mut content).unwrap();
-    let deserialized: Vec<TodoItem> = serde_json::from_str(&mut content).unwrap();
-    deserialized
-}
-
-fn list(todo_list: &mut Vec<TodoItem>, mut writer: impl std::io::Write) {
-    for todo_item in todo_list.iter().clone() {
-        //println!("{}",todo_item.name);
-        writeln!(writer, "{}", todo_item.name);
-    }
-}
-
-fn delete(item_name: String, path: &Path)  {
-    let mut todo_list = load(path);
-    todo_list.retain(|x| x.name != item_name);
-    save(&mut todo_list, path);
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn list_test() {
-        let mut todo_list : Vec<TodoItem> = Vec::new(); 
-        todo_list.push(TodoItem{name:"pizza".to_string()});
-        todo_list.push(TodoItem{name:"things".to_string()});
-        let mut result = Vec::new();
-        list(&mut todo_list, &mut result);
-        assert_eq!(result, b"pizza\nthings\n");
-    }
-    #[test]
-    fn new_item_test() {
-        let mut todo_list : Vec<TodoItem> = Vec::new(); 
-        todo_list.push(TodoItem{name:"pizza".to_string()});
-        todo_list.push(TodoItem{name:"things".to_string()});
-        let new_item_name = String::from("athing");
-
-        let path = Path::new("./todos.json");
-
-        new_item(new_item_name, &mut todo_list, path);
-        load(path);
-        let mut result = Vec::new();
-        list(&mut todo_list, &mut result);
-        assert_eq!(result, b"pizza\nthings\nathing\n");
-    }
-
-    #[test]
-    fn save_test() {
-        let mut todo_list : Vec<TodoItem> = Vec::new(); 
-        //could use tempdir here
-        let dir = TempDir::new("producetemp").unwrap();
-        let data_path = dir.path().join("foo.json");
-        //let data_path = format!("{}{}",dir.path().to_str().unwrap(), "todos.json");
-        save(&mut todo_list, &data_path);
-
-        assert!(std::path::Path::new(&data_path).exists());
-
-    }
+    app.listen("127.0.0.1:8080").await?;
+    Ok(())
 }
