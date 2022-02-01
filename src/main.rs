@@ -61,24 +61,52 @@ async fn server(jargon_store: Arc <RwLock<HashMap<String, Jargon>>>) -> Server<S
 }
 
 #[async_std::test]
-async fn list_jargons() -> tide::Result<()>{
+async fn add_jargon() -> tide::Result<()>{
     use tide::http::{Method, Request, Response, Url};
 
+    let should_be = "{\"name\":\"foo\",\"def\":\"An arbitrary name for something to avoid taking focus away from the point\"}";
+
     let jargon = Jargon {
-        name : String::from("foo"),
-        def : String::from("A arbitrary name for something to avoid taking focus away from the point"),
+         name : String::from("foo"),
+         def : String::from("An arbitrary name for something to avoid taking focus away from the point"),
     };
 
     let mut jargon_store = HashMap::new();
-    jargon_store.insert(jargon.name.clone(), jargon);
-    let jargons : Vec<Jargon> = jargon_store.values().cloned().collect();
-    let should_be = serde_json::to_string(&jargons).unwrap();
+    //jargon_store.insert(jargon.name.clone(), jargon);
 
     let state = Arc::new(RwLock::new(jargon_store));
     let app = server(state).await;
 
     let url = Url::parse("https://example.com/jargon").unwrap();
-    let mut req = Request::new(Method::Get, url);
+    let mut req = Request::new(Method::Post, url);
+    req.set_body(serde_json::to_string(&jargon)?);
+
+    let mut res: Response = app.respond(req).await.unwrap();
+    let was = res.body_string().await.unwrap();
+
+    assert_eq!(should_be, was);
+    Ok(())
+}
+
+#[async_std::test]
+async fn list_jargons() -> tide::Result<()>{
+    use tide::http::{Method, Request, Response, Url};
+
+    let should_be = "[{\"name\":\"foo\",\"def\":\"An arbitrary name for something to avoid taking focus away from the point\"}]";
+
+    let jargon = Jargon {
+         name : String::from("foo"),
+         def : String::from("An arbitrary name for something to avoid taking focus away from the point"),
+    };
+
+    let mut jargon_store = HashMap::new();
+    jargon_store.insert(jargon.name.clone(), jargon);
+
+    let state = Arc::new(RwLock::new(jargon_store));
+    let app = server(state).await;
+
+    let url = Url::parse("https://example.com/jargon").unwrap();
+    let req = Request::new(Method::Get, url);
 
     let mut res: Response = app.respond(req).await.unwrap();
     let was = res.body_string().await.unwrap();
