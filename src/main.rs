@@ -1,8 +1,9 @@
 use tide::{Response, Request, Body, Server};
 use async_std::sync::RwLock;
-use tide::prelude::{Deserialize, Serialize};
+//use tide::prelude::{Deserialize, Serialize};
 use std::collections::hash_map::{HashMap};
 use std::sync::Arc;
+use serde::{Deserialize, Serialize};
 // use serde::{Deserialize, Serialize};
 
 #[derive(Clone,Debug)]
@@ -14,6 +15,11 @@ struct State {
 struct Jargon {
     name: String,
     def: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+struct Jargons {
+    jargon: Vec<Jargon>,
 }
 
 #[async_std::main]
@@ -52,4 +58,31 @@ async fn server(jargon_store: Arc <RwLock<HashMap<String, Jargon>>>) -> Server<S
 
     });
     app
+}
+
+#[async_std::test]
+async fn list_jargons() -> tide::Result<()>{
+    use tide::http::{Method, Request, Response, Url};
+
+    let jargon = Jargon {
+        name : String::from("foo"),
+        def : String::from("A arbitrary name for something to avoid taking focus away from the point"),
+    };
+
+    let mut jargon_store = HashMap::new();
+    jargon_store.insert(jargon.name.clone(), jargon);
+    let jargons : Vec<Jargon> = jargon_store.values().cloned().collect();
+    let should_be = serde_json::to_string(&jargons).unwrap();
+
+    let state = Arc::new(RwLock::new(jargon_store));
+    let app = server(state).await;
+
+    let url = Url::parse("https://example.com/jargon").unwrap();
+    let mut req = Request::new(Method::Get, url);
+
+    let mut res: Response = app.respond(req).await.unwrap();
+    let was = res.body_string().await.unwrap();
+
+    assert_eq!(should_be, was);
+    Ok(())
 }
