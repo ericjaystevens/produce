@@ -1,111 +1,116 @@
-use std::fs::File;                                                                                                                                                                   
-use structopt::StructOpt;
-use std::io::prelude::*;
-use serde::{Serialize, Deserialize};
-use tempdir::TempDir;
-use std::path::Path;
+use tide::{Response, Request, Body, Server};
+use async_std::sync::RwLock;
+//use tide::prelude::{Deserialize, Serialize};
+use std::collections::hash_map::{HashMap};
+use std::sync::Arc;
+use serde::{Deserialize, Serialize};
+// use serde::{Deserialize, Serialize};
 
-
-
-#[derive(StructOpt, Debug)]
-#[structopt(name="Produce", about="A productivity tool")]
-enum Cli {
-    #[structopt(name = "add", about="Add an item to the todo list")]
-    Add {
-        /// item to add to list
-        item: String,
-    },
-    #[structopt(name = "remove", about="Remove an existing item from the todo list")]
-    Remove {
-        /// item to remove from list
-        item: String,
-    },
-    #[structopt(name = "list", about="List all existing items from the todo list")]
-    List {
-    }
+#[derive(Clone,Debug)]
+struct State {
+    jargons: Arc<RwLock<HashMap<String,Jargon>>>
 }
 
-#[derive(Serialize, Deserialize, Debug)]
-struct TodoItem {
+#[derive(Clone, Debug, Deserialize, Serialize, Default)]
+struct Jargon {
     name: String,
+    def: String,
 }
 
-fn main() {
-    //let args = Cli::from_args();
-    
-    let data_path = Path::new("./todos.json");
-
-    let mut todo_list:Vec<TodoItem> = load(data_path);
-
-    match Cli::from_args() {
-        Cli::Add {item}=> new_item(item, &mut todo_list, data_path),
-        Cli::List {} => list(&mut todo_list, &mut std::io::stdout()),
-        Cli::Remove {item} => delete(item, data_path),
-        _ => println!("invalid action")
-    }
+#[derive(Debug, Clone, Deserialize, Serialize)]
+struct Jargons {
+    jargon: Vec<Jargon>,
 }
 
-fn new_item(new_item_name: String, todo_list: &mut Vec<TodoItem>, path: &Path){
-    let new_item = TodoItem{
-        name: new_item_name,
+#[async_std::main]
+async fn main() {
+    tide::log::start();
+    let jargon_store = Default::default() ;
+    let app = server(jargon_store).await;
+
+    app.listen("127.0.0.1:8080").await.unwrap();
+}
+
+async fn server(jargon_store: Arc <RwLock<HashMap<String, Jargon>>>) -> Server<State> {
+    let state = State {
+        jargons: jargon_store, //Default::default(),
     };
-    todo_list.push(new_item);
-    save(todo_list, path);
+
+    let mut app = tide::with_state(state);
+
+    app.at("/").get(|_| async { Ok("Hello, world!") });
+
+    app.at("/jargon").post(|mut req: Request<State>| async move {
+        let jargon: Jargon = req.body_json().await?;
+        let mut jargons = req.state().jargons.write().await;
+        jargons.insert(String::from(&jargon.name), jargon.clone());
+        let mut res = Response::new(201);
+        res.set_body(Body::from_json(&jargon)?);
+        Ok(res)
+    });
+
+    app.at("/jargon").get(|req: Request<State>| async move {
+        let jargons = req.state().jargons.read().await;
+        let jargon_vec : Vec<Jargon> = jargons.values().cloned().collect(); 
+        let mut res = Response::new(200);
+        res.set_body(Body::from_json(&jargon_vec)?);
+        Ok(res)
+
+    });
+    app
 }
 
-//probaby should return an option or something to show the save was successful
-fn save(todo_list: &mut Vec<TodoItem>, path: &Path){
-    let mut file = File::create(path).unwrap();
-    //convert to json
-    let serialized = serde_json::to_string(&todo_list).unwrap();
-    //write json to file
-    file.write_all(serialized.as_bytes()).unwrap();
+#[async_std::test]
+async fn add_jargon() -> tide::Result<()>{
+    use tide::http::{Method, Request, Response, Url};
+
+    let should_be = "{\"name\":\"foo\",\"def\":\"An arbitrary name for something to avoid taking focus away from the point\"}";
+
+    let jargon = Jargon {
+         name : String::from("foo"),
+         def : String::from("An arbitrary name for something to avoid taking focus away from the point"),
+    };
+
+    let mut jargon_store = HashMap::new();
+    //jargon_store.insert(jargon.name.clone(), jargon);
+
+    let state = Arc::new(RwLock::new(jargon_store));
+    let app = server(state).await;
+
+    let url = Url::parse("https://example.com/jargon").unwrap();
+    let mut req = Request::new(Method::Post, url);
+    req.set_body(serde_json::to_string(&jargon)?);
+
+    let mut res: Response = app.respond(req).await.unwrap();
+    let was = res.body_string().await.unwrap();
+
+    assert_eq!(should_be, was);
+    Ok(())
 }
 
-fn load(path: &Path) -> Vec<TodoItem> {
-    let mut file = File::open(path).unwrap();
-    let mut content = String::new();
-    file.read_to_string(&mut content).unwrap();
-    let deserialized: Vec<TodoItem> = serde_json::from_str(&mut content).unwrap();
-    deserialized
-}
+#[async_std::test]
+async fn list_jargons() -> tide::Result<()>{
+    use tide::http::{Method, Request, Response, Url};
 
-fn list(todo_list: &mut Vec<TodoItem>, mut writer: impl std::io::Write) {
-    for todo_item in todo_list.iter().clone() {
-        //println!("{}",todo_item.name);
-        writeln!(writer, "{}", todo_item.name);
-    }
-}
+    let should_be = "[{\"name\":\"foo\",\"def\":\"An arbitrary name for something to avoid taking focus away from the point\"}]";
 
-fn delete(item_name: String, path: &Path)  {
-    let mut todo_list = load(path);
-    todo_list.retain(|x| x.name != item_name);
-    save(&mut todo_list, path);
-}
+    let jargon = Jargon {
+         name : String::from("foo"),
+         def : String::from("An arbitrary name for something to avoid taking focus away from the point"),
+    };
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn list_test() {
-        let mut todo_list : Vec<TodoItem> = Vec::new(); 
-        todo_list.push(TodoItem{name:"pizza".to_string()});
-        todo_list.push(TodoItem{name:"things".to_string()});
-        let mut result = Vec::new();
-        list(&mut todo_list, &mut result);
-        assert_eq!(result, b"pizza\nthings\n");
-    }
+    let mut jargon_store = HashMap::new();
+    jargon_store.insert(jargon.name.clone(), jargon);
 
-    #[test]
-    fn save_test() {
-        let mut todo_list : Vec<TodoItem> = Vec::new(); 
-        //could use tempdir here
-        let dir = TempDir::new("producetemp").unwrap();
-        let data_path = dir.path().join("foo.json");
-        //let data_path = format!("{}{}",dir.path().to_str().unwrap(), "todos.json");
-        save(&mut todo_list, &data_path);
+    let state = Arc::new(RwLock::new(jargon_store));
+    let app = server(state).await;
 
-        assert!(std::path::Path::new(&data_path).exists());
+    let url = Url::parse("https://example.com/jargon").unwrap();
+    let req = Request::new(Method::Get, url);
 
-    }
+    let mut res: Response = app.respond(req).await.unwrap();
+    let was = res.body_string().await.unwrap();
+
+    assert_eq!(should_be, was);
+    Ok(())
 }
